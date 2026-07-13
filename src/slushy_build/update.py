@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 
 from . import build_deps as build_deps_mod
-from .grouping import ResolvedPackageDeps, group_packages, merge_specifiers
+from .grouping import ResolvedPackageDeps, build_annotations, group_packages, merge_specifiers
 from .requirements import (
     PackageVersion,
     filter_requirements,
@@ -23,6 +23,7 @@ def run_update(
     from_scratch: bool,
     exclude_newer: str | None,
     output_dir: Path,
+    annotate_requirements: bool = False,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -105,7 +106,8 @@ def run_update(
 
         merged = merge_specifiers(group)
         source_packages = [dep.package for dep in group]
-        write_in_file(in_file, merged, source_packages=source_packages)
+        ann = build_annotations(group) if annotate_requirements else None
+        write_in_file(in_file, merged, source_packages=source_packages, annotations=ann)
         logger.info("Wrote %s (%d requirements)", in_file, len(merged))
 
         uv_pip_compile(

@@ -1,6 +1,7 @@
 from slushy_build.grouping import (
     ResolvedPackageDeps,
     are_compatible,
+    build_annotations,
     find_best_clique,
     group_packages,
     merge_specifiers,
@@ -81,6 +82,34 @@ class TestFindBestClique:
         result = find_best_clique(pkgs)
         keys = {p.package.key for p in result}
         assert keys == {"a-1.0", "b-1.0"}
+
+
+class TestBuildAnnotations:
+    def test_single_package(self):
+        pkgs = [_make_pkg("requests", "2.31.0", ["setuptools>=67.0", "wheel"], {})]
+        result = build_annotations(pkgs)
+        assert result == {
+            "setuptools": ["requests==2.31.0: setuptools>=67.0"],
+            "wheel": ["requests==2.31.0: wheel"],
+        }
+
+    def test_multiple_packages(self):
+        pkgs = [
+            _make_pkg("requests", "2.31.0", ["setuptools>=67.0"], {}),
+            _make_pkg("urllib3", "2.0.4", ["setuptools>=60.0"], {}),
+        ]
+        result = build_annotations(pkgs)
+        assert result["setuptools"] == [
+            "requests==2.31.0: setuptools>=67.0",
+            "urllib3==2.0.4: setuptools>=60.0",
+        ]
+
+    def test_skips_non_matching_markers(self):
+        pkgs = [
+            _make_pkg("a", "1.0", ['setuptools>=67.0 ; sys_platform == "win32"'], {}),
+        ]
+        result = build_annotations(pkgs)
+        assert result == {}
 
 
 class TestMergeSpecifiers:

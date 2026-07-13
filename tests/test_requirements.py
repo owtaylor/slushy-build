@@ -133,6 +133,26 @@ class TestWriteInFile:
         assert lines[1] == "# slushy-build-source: urllib3==2.0.4"
         assert lines[2] == "setuptools>=67.0"
 
+    def test_writes_annotations(self, tmp_path):
+        path = tmp_path / "test.in"
+        annotations = {
+            "setuptools": [
+                "requests==2.31.0: setuptools>=67.0",
+                "urllib3==2.0.4: setuptools>=60.0",
+            ],
+        }
+        write_in_file(path, ["setuptools>=67.0", "wheel"], annotations=annotations)
+        lines = path.read_text().splitlines()
+        assert lines[0] == "# requests==2.31.0: setuptools>=67.0"
+        assert lines[1] == "# urllib3==2.0.4: setuptools>=60.0"
+        assert lines[2] == "setuptools>=67.0"
+        assert lines[3] == "wheel"
+
+    def test_no_annotations_when_none(self, tmp_path):
+        path = tmp_path / "test.in"
+        write_in_file(path, ["setuptools>=67.0"])
+        assert path.read_text() == "setuptools>=67.0\n"
+
 
 class TestParseInFileSources:
     def test_parses_sources(self, tmp_path):

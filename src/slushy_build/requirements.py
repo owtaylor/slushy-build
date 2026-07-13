@@ -116,12 +116,24 @@ def write_in_file(
     path: Path,
     requirements: list[str],
     source_packages: list[PackageVersion] | None = None,
+    annotations: dict[str, list[str]] | None = None,
 ) -> None:
     lines: list[str] = []
     if source_packages:
         for pkg in sorted(source_packages, key=lambda p: p.key):
             lines.append(f"{SOURCE_COMMENT_PREFIX}{pkg.name}=={pkg.version}")
-    lines.extend(requirements)
+    for req_str in requirements:
+        if annotations:
+            req_str_stripped = req_str.strip()
+            if req_str_stripped:
+                try:
+                    req = Requirement(req_str_stripped)
+                    canonical = canonicalize_name(req.name)
+                    for ann in annotations.get(canonical, []):
+                        lines.append(f"# {ann}")
+                except Exception:
+                    pass
+        lines.append(req_str)
     path.write_text("\n".join(lines) + "\n")
 
 

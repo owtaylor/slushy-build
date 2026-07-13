@@ -83,6 +83,22 @@ def find_best_clique(
     return [by_key[k] for k in cliques[best_index]]
 
 
+def build_annotations(packages: list[ResolvedPackageDeps]) -> dict[str, list[str]]:
+    """Map each canonical requirement name to provenance annotations."""
+    result: defaultdict[str, list[str]] = defaultdict(list)
+    for pkg in sorted(packages, key=lambda p: p.package.key):
+        for spec_str in pkg.build_dep_specifiers:
+            spec_str = spec_str.strip()
+            if not spec_str:
+                continue
+            req = Requirement(spec_str)
+            if req.marker is not None and not req.marker.evaluate():
+                continue
+            canonical = canonicalize_name(req.name)
+            result[canonical].append(f"{pkg.package.name}=={pkg.package.version}: {spec_str}")
+    return dict(result)
+
+
 def merge_specifiers(packages: list[ResolvedPackageDeps]) -> list[str]:
     """Merge build dep specifiers from multiple packages into a combined list."""
     all_reqs: defaultdict[str, list[Requirement]] = defaultdict(list)
