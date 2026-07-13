@@ -47,6 +47,11 @@ class TestParseRequirements:
         assert result[0].name == "jinja2"
         assert result[1].name == "setuptools-scm"
 
+    def test_non_matching_marker_skipped(self):
+        text = 'win32-setctime==1.1.0 ; sys_platform == "win32"\n'
+        result = parse_requirements(text)
+        assert result == []
+
     def test_unpinned_skipped(self):
         text = "requests>=2.0\nflask\n"
         result = parse_requirements(text)

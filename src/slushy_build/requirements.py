@@ -37,6 +37,8 @@ def parse_requirements(text: str) -> list[PackageVersion]:
             req = Requirement(line)
         except Exception:
             continue
+        if req.marker is not None and not req.marker.evaluate():
+            continue
         version = None
         for spec in req.specifier:
             if spec.operator == "==":
