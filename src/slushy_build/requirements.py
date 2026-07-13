@@ -16,6 +16,40 @@ class PackageVersion:
         return f"{self.name}-{self.version}"
 
 
+def filter_requirements(text: str) -> str:
+    """Remove requirements with non-matching platform markers, preserving formatting."""
+    raw_lines = text.splitlines(keepends=True)
+    result: list[str] = []
+    i = 0
+    while i < len(raw_lines):
+        start = i
+        joined = raw_lines[i]
+        while joined.rstrip("\n").endswith("\\") and i + 1 < len(raw_lines):
+            i += 1
+            joined += raw_lines[i]
+        i += 1
+
+        stripped = joined.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("--"):
+            result.extend(raw_lines[start:i])
+            continue
+
+        cleaned = re.sub(r"\s*\\$", "", stripped, flags=re.MULTILINE)
+        cleaned = re.sub(r"\s*--hash=\S+", "", cleaned).strip()
+        try:
+            req = Requirement(cleaned)
+        except Exception:
+            result.extend(raw_lines[start:i])
+            continue
+
+        if req.marker is not None and not req.marker.evaluate():
+            continue
+
+        result.extend(raw_lines[start:i])
+
+    return "".join(result)
+
+
 def parse_requirements(text: str) -> list[PackageVersion]:
     """Parse a requirements.txt into a list of pinned package versions.
 

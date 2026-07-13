@@ -1,10 +1,42 @@
 from slushy_build.requirements import (
     PackageVersion,
+    filter_requirements,
     parse_in_file_sources,
     parse_requirements,
     parse_resolved_requirements,
     write_in_file,
 )
+
+
+class TestFilterRequirements:
+    def test_keeps_matching_markers(self):
+        text = 'cffi==1.16.0 ; platform_python_implementation != "PyPy"\nrequests==2.31.0\n'
+        result = filter_requirements(text)
+        assert "cffi==1.16.0" in result
+        assert "requests==2.31.0" in result
+
+    def test_removes_non_matching_markers(self):
+        text = 'win32-setctime==1.1.0 ; sys_platform == "win32"\nrequests==2.31.0\n'
+        result = filter_requirements(text)
+        assert "win32-setctime" not in result
+        assert "requests==2.31.0" in result
+
+    def test_preserves_hashes_and_continuations(self):
+        text = (
+            "requests==2.31.0 \\\n"
+            "    --hash=sha256:abc123 \\\n"
+            "    --hash=sha256:def456\n"
+            'win32-setctime==1.1.0 ; sys_platform == "win32"\n'
+        )
+        result = filter_requirements(text)
+        assert "--hash=sha256:abc123" in result
+        assert "--hash=sha256:def456" in result
+        assert "win32-setctime" not in result
+
+    def test_preserves_comments_and_blanks(self):
+        text = "# comment\n\nrequests==2.31.0\n"
+        result = filter_requirements(text)
+        assert result == text
 
 
 class TestParseRequirements:

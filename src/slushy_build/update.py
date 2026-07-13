@@ -6,6 +6,7 @@ from . import build_deps as build_deps_mod
 from .grouping import ResolvedPackageDeps, group_packages, merge_specifiers
 from .requirements import (
     PackageVersion,
+    filter_requirements,
     parse_requirements,
     write_in_file,
 )
@@ -27,11 +28,11 @@ def run_update(
 
     # Step 0: Export/load source requirements
     if uv_lock:
-        source_text = uv_export()
+        source_text = filter_requirements(uv_export())
         (output_dir / "requirements.txt").write_text(source_text)
     else:
         assert requirements_file is not None
-        source_text = requirements_file.read_text()
+        source_text = filter_requirements(requirements_file.read_text())
 
     source_packages = parse_requirements(source_text)
     logger.info("Loaded %d source packages", len(source_packages))
