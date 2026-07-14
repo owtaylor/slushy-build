@@ -1,11 +1,45 @@
 from slushy_build.requirements import (
     PackageVersion,
+    apply_constraints,
     filter_requirements,
     parse_in_file_sources,
     parse_requirements,
     parse_resolved_requirements,
     write_in_file,
 )
+
+
+class TestApplyConstraints:
+    def test_matching_constraint(self):
+        deps = ["uv-build>=0.6.1"]
+        result = apply_constraints(deps, ["uv-build<0.11.8"])
+        assert len(result) == 1
+        assert ">=0.6.1" in result[0]
+        assert "<0.11.8" in result[0]
+
+    def test_non_matching_constraint(self):
+        deps = ["setuptools>=67.0"]
+        result = apply_constraints(deps, ["uv-build<0.11.8"])
+        assert result == ["setuptools>=67.0"]
+
+    def test_multiple_constraints(self):
+        deps = ["uv-build>=0.6.1", "setuptools>=67.0", "wheel"]
+        result = apply_constraints(deps, ["uv-build<0.11.8", "setuptools<72"])
+        uv_build = [r for r in result if "uv-build" in r][0]
+        setuptools = [r for r in result if "setuptools" in r][0]
+        assert "<0.11.8" in uv_build
+        assert "<72" in setuptools
+        assert "wheel" in result
+
+    def test_empty_constraints(self):
+        deps = ["setuptools>=67.0"]
+        result = apply_constraints(deps, [])
+        assert result == deps
+
+    def test_canonicalizes_names(self):
+        deps = ["uv_build>=0.6.1"]
+        result = apply_constraints(deps, ["uv-build<0.11.8"])
+        assert "<0.11.8" in result[0]
 
 
 class TestFilterRequirements:

@@ -109,6 +109,39 @@ def parse_resolved_requirements(text: str) -> dict[str, str]:
     return result
 
 
+def apply_constraints(deps: list[str], constraints: list[str]) -> list[str]:
+    """Augment build dep specifiers with extra constraints.
+
+    For each dep whose canonical name matches a constraint, the constraint's
+    specifiers are appended (e.g. "uv-build>=0.6.1" + constraint "uv-build<0.11.8"
+    becomes "uv-build<0.11.8,>=0.6.1").
+    """
+    if not constraints:
+        return deps
+
+    constraint_map: dict[str, Requirement] = {}
+    for c in constraints:
+        req = Requirement(c)
+        constraint_map[canonicalize_name(req.name)] = req
+
+    result = []
+    for dep_str in deps:
+        dep_str = dep_str.strip()
+        if not dep_str:
+            result.append(dep_str)
+            continue
+        try:
+            req = Requirement(dep_str)
+        except Exception:
+            result.append(dep_str)
+            continue
+        canonical = canonicalize_name(req.name)
+        if canonical in constraint_map:
+            req.specifier &= constraint_map[canonical].specifier
+        result.append(str(req))
+    return result
+
+
 SOURCE_COMMENT_PREFIX = "# slushy-build-source: "
 
 

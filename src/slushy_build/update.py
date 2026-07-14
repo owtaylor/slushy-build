@@ -6,6 +6,7 @@ from . import build_deps as build_deps_mod
 from .grouping import ResolvedPackageDeps, build_annotations, group_packages, merge_specifiers
 from .requirements import (
     PackageVersion,
+    apply_constraints,
     filter_requirements,
     parse_requirements,
     write_in_file,
@@ -24,6 +25,7 @@ def run_update(
     exclude_newer: str | None,
     output_dir: Path,
     annotate_requirements: bool = False,
+    constraints: list[str] | None = None,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -63,6 +65,9 @@ def run_update(
 
                 if not deps:
                     continue
+
+                if constraints:
+                    deps = apply_constraints(deps, constraints)
 
                 seed = None if from_scratch else find_seed_content(package, output_dir)
 

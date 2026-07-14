@@ -23,6 +23,10 @@ def update(
     exclude_newer: Optional[str] = typer.Option(None, help="Ignore packages newer than this date."),
     output_dir: Path = typer.Option(".konflux", help="Output directory for requirements files."),
     annotate_requirements: bool = typer.Option(False, help="Add provenance comments to requirements-build.in files."),
+    constrain: Annotated[
+        Optional[list[str]],
+        typer.Option(help="Add version constraint to a build dependency (e.g. 'uv-build<0.11.8')."),
+    ] = None,
 ) -> None:
     """Update build dependency requirements."""
     if not uv_lock and requirements_file is None:
@@ -46,6 +50,7 @@ def update(
             exclude_newer=exclude_newer,
             output_dir=output_dir,
             annotate_requirements=annotate_requirements,
+            constraints=constrain or [],
         )
     except UvError as e:
         typer.echo(f"Error: {e}", err=True)
