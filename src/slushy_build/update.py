@@ -4,6 +4,7 @@ from pathlib import Path
 
 from . import build_deps as build_deps_mod
 from .grouping import ResolvedPackageDeps, build_annotations, group_packages, merge_specifiers
+from .pipeline import update_pipelines
 from .requirements import (
     PackageVersion,
     apply_constraints,
@@ -26,13 +27,17 @@ def run_update(
     output_dir: Path,
     annotate_requirements: bool = False,
     constraints: list[str] | None = None,
+    update_pipeline: bool = True,
+    pipeline_dir: Path = Path(".tekton"),
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 0: Export/load source requirements
+    requirements_out: Path | None = None
     if uv_lock:
         source_text = filter_requirements(uv_export())
-        (output_dir / "requirements.txt").write_text(source_text)
+        requirements_out = output_dir / "requirements.txt"
+        requirements_out.write_text(source_text)
     else:
         assert requirements_file is not None
         source_text = filter_requirements(requirements_file.read_text())
@@ -104,10 +109,12 @@ def run_update(
     logger.info("Grouped into %d requirement sets", len(groups))
 
     # Step 4: Write output files
+    build_files: list[Path] = []
     for i, group in enumerate(groups):
         suffix = "" if i == 0 else f"-{i}"
         in_file = output_dir / f"requirements-build{suffix}.in"
         txt_file = output_dir / f"requirements-build{suffix}.txt"
+        build_files.append(txt_file)
 
         merged = merge_specifiers(group)
         source_packages = [dep.package for dep in group]
@@ -139,3 +146,7 @@ def run_update(
             txt_file.unlink()
             logger.info("Removed stale %s", txt_file)
         i += 1
+
+    # Step 6: Sync Tekton PipelineRun prefetch-input with the generated files
+    if update_pipeline:
+        update_pipelines(pipeline_dir, requirements_file=requirements_out, build_files=build_files)

@@ -1,4 +1,19 @@
+import json
+
 from slushy_build.update import run_update
+
+
+def _minimal_pipelinerun(prefetch_value: str) -> str:
+    return (
+        "apiVersion: tekton.dev/v1\n"
+        "kind: PipelineRun\n"
+        "metadata:\n"
+        "  name: example-pr\n"
+        "spec:\n"
+        "  params:\n"
+        "    - name: prefetch-input\n"
+        f"      value: '{prefetch_value}'\n"
+    )
 
 
 class TestRunUpdate:
@@ -233,3 +248,78 @@ class TestRunUpdate:
         assert (output_dir / "requirements-build.in").exists()
         assert not (output_dir / "requirements-build-1.in").exists()
         assert not (output_dir / "requirements-build-1.txt").exists()
+
+    def _setup_simple_mocks(self, mocker):
+        mocker.patch(
+            "slushy_build.update.build_deps_mod.get_build_dependencies",
+            return_value=["setuptools>=67.0"],
+        )
+        mocker.patch(
+            "slushy_build.update.resolve_build_deps",
+            return_value={"setuptools": "83.0.0"},
+        )
+
+        def fake_compile(in_file, txt_file, **kwargs):
+            txt_file.write_text("setuptools==83.0.0\n")
+
+        mocker.patch("slushy_build.update.uv_pip_compile", side_effect=fake_compile)
+
+    def test_syncs_pipeline_from_uv_lock(self, mocker, tmp_path):
+        mocker.patch("slushy_build.update.uv_export", return_value="requests==2.31.0\n")
+        self._setup_simple_mocks(mocker)
+
+        output_dir = tmp_path / ".konflux"
+        pipeline_dir = tmp_path / ".tekton"
+        pipeline_dir.mkdir()
+        value = '[{"type": "pip", "requirements_build_files": ["old.txt"]}, {"type": "rpm", "path": "."}]'
+        yaml_file = pipeline_dir / "pull_request.yaml"
+        yaml_file.write_text(_minimal_pipelinerun(value))
+
+        run_update(
+            uv_lock=True,
+            requirements_file=None,
+            from_scratch=False,
+            exclude_newer=None,
+            output_dir=output_dir,
+            pipeline_dir=pipeline_dir,
+        )
+
+        entries = json.loads(_prefetch_value(yaml_file.read_text()))
+        pip = next(e for e in entries if e["type"] == "pip")
+        assert pip["requirements_files"] == [str(output_dir / "requirements.txt")]
+        assert pip["requirements_build_files"] == [str(output_dir / "requirements-build.txt")]
+
+    def test_no_update_pipeline_leaves_files_alone(self, mocker, tmp_path):
+        """Test existing pipeline is left alone for --no-update-pipeline."""
+        mocker.patch("slushy_build.update.uv_export", return_value="requests==2.31.0\n")
+        self._setup_simple_mocks(mocker)
+
+        output_dir = tmp_path / ".konflux"
+        pipeline_dir = tmp_path / ".tekton"
+        pipeline_dir.mkdir()
+        value = '[{"type": "pip", "requirements_build_files": ["old.txt"]}]'
+        yaml_file = pipeline_dir / "pull_request.yaml"
+        yaml_file.write_text(_minimal_pipelinerun(value))
+        original = yaml_file.read_text()
+
+        run_update(
+            uv_lock=True,
+            requirements_file=None,
+            from_scratch=False,
+            exclude_newer=None,
+            output_dir=output_dir,
+            pipeline_dir=pipeline_dir,
+            update_pipeline=False,
+        )
+
+        assert yaml_file.read_text() == original
+
+
+def _prefetch_value(text: str) -> str:
+    import yaml
+
+    doc = yaml.safe_load(text)
+    for param in doc["spec"]["params"]:
+        if param["name"] == "prefetch-input":
+            return param["value"]
+    raise AssertionError("no prefetch-input param")

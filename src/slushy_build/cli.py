@@ -4,6 +4,7 @@ from typing import Annotated, Optional
 
 import typer
 
+from .pipeline import PipelineError
 from .update import run_update
 from .uv import UvError
 
@@ -27,6 +28,10 @@ def update(
         Optional[list[str]],
         typer.Option(help="Add version constraint to a build dependency (e.g. 'uv-build<0.11.8')."),
     ] = None,
+    update_pipeline: bool = typer.Option(
+        True, help="Sync prefetch-input in Tekton PipelineRun files with the generated requirements."
+    ),
+    pipeline_dir: Path = typer.Option(Path(".tekton"), help="Directory containing Tekton PipelineRun files."),
 ) -> None:
     """Update build dependency requirements."""
     if not uv_lock and requirements_file is None:
@@ -51,7 +56,9 @@ def update(
             output_dir=output_dir,
             annotate_requirements=annotate_requirements,
             constraints=constrain or [],
+            update_pipeline=update_pipeline,
+            pipeline_dir=pipeline_dir,
         )
-    except UvError as e:
+    except (UvError, PipelineError) as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
