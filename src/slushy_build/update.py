@@ -61,10 +61,11 @@ def run_update(
             for package in pending:
                 try:
                     deps = build_deps_mod.get_build_dependencies(package)
-                except build_deps_mod.BuildDependencyError:
+                except build_deps_mod.BuildDependencyError as e:
                     logger.warning(
-                        "Skipping %s: could not determine build dependencies",
+                        "Skipping %s: could not determine build dependencies: %s",
                         package.key,
+                        e
                     )
                     continue
 
