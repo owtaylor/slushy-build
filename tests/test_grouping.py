@@ -1,3 +1,9 @@
+from itertools import permutations
+import os
+import subprocess
+import sys
+import textwrap
+
 from slushy_build.grouping import (
     ResolvedPackageDeps,
     are_compatible,
@@ -35,6 +41,36 @@ class TestAreCompatible:
 
 
 class TestFindBestClique:
+    def test_tiebreak_version_tradeoff(self):
+        pkgs = [
+            _make_pkg("a", "1", [], {"x": "2", "y": "1"}),
+            _make_pkg("b", "1", [], {"x": "2", "y": "1"}),
+            _make_pkg("c", "1", [], {"x": "1", "y": "2"}),
+            _make_pkg("d", "1", [], {"x": "1", "y": "2"}),
+        ]
+        for order in permutations(pkgs):
+            assert [p.package.name for p in find_best_clique(list(order))] == ["a", "b"]
+
+    def test_tiebreak_equal_scores(self):
+        # Compatibility compares exact strings, while version scores treat
+        # 1 and 1.0 as equal. Member keys must break the resulting tie.
+        pkgs = [
+            _make_pkg("a", "1", [], {"x": "1"}),
+            _make_pkg("b", "1", [], {"x": "1.0"}),
+            _make_pkg("common", "1", [], {}),
+        ]
+        for order in permutations(pkgs):
+            assert [p.package.name for p in find_best_clique(list(order))] == ["a", "common"]
+
+    def test_tiebreak_missing_dependency(self):
+        pkgs = [
+            _make_pkg("a", "1", [], {"x": "1"}),
+            _make_pkg("b", "1", [], {"x": "1"}),
+            _make_pkg("c", "1", [], {"x": "2", "y": "1"}),
+            _make_pkg("d", "1", [], {"x": "2", "y": "1"}),
+        ]
+        assert [p.package.name for p in find_best_clique(pkgs)] == ["c", "d"]
+
     def test_single_package(self):
         p = _make_pkg("a", "1.0", [], {"setuptools": "83.0.0"})
         result = find_best_clique([p])
@@ -113,6 +149,14 @@ class TestBuildAnnotations:
 
 
 class TestMergeSpecifiers:
+    def test_equivalent_spellings(self):
+        pkgs = [
+            _make_pkg("a", "1", ["maturin>=1.15.0,<2", "wheel!=1.0"], {}),
+            _make_pkg("b", "1", ["maturin>=1.15,<2.0", "wheel!=1"], {}),
+        ]
+        for order in permutations(pkgs):
+            assert merge_specifiers(list(order)) == ["maturin<2,>=1.15.0", "wheel!=1"]
+
     def test_basic(self):
         pkgs = [
             _make_pkg("a", "1.0", ["setuptools>=67.0"], {}),
@@ -152,6 +196,33 @@ class TestMergeSpecifiers:
 
 
 class TestGroupPackages:
+    def test_stable_across_hash_seeds(self):
+        script = textwrap.dedent("""\
+            import json
+            from slushy_build.grouping import ResolvedPackageDeps, group_packages, merge_specifiers
+            from slushy_build.requirements import PackageVersion
+
+            packages = [
+                ResolvedPackageDeps(PackageVersion("a", "1"), ["maturin>=1.15.0,<2"], {"x": "2", "y": "1"}),
+                ResolvedPackageDeps(PackageVersion("b", "1"), ["maturin>=1.15,<2.0"], {"x": "2", "y": "1"}),
+                ResolvedPackageDeps(PackageVersion("c", "1"), [], {"x": "1", "y": "2"}),
+                ResolvedPackageDeps(PackageVersion("d", "1"), [], {"x": "1", "y": "2"}),
+            ]
+            print(json.dumps([
+                ([p.package.name for p in group], merge_specifiers(group))
+                for group in group_packages(packages)
+            ]))
+        """)
+        outputs = {
+            subprocess.check_output(
+                [sys.executable, "-c", script],
+                env={**os.environ, "PYTHONHASHSEED": str(seed)},
+                text=True,
+            ).strip()
+            for seed in range(8)
+        }
+        assert outputs == {'[[["a", "b"], ["maturin<2,>=1.15.0"]], [["c", "d"], []]]'}
+
     def test_single_group(self):
         pkgs = [
             _make_pkg("a", "1.0", ["setuptools>=67"], {"setuptools": "83.0.0"}),

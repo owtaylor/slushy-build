@@ -27,6 +27,7 @@ def are_compatible(a: ResolvedPackageDeps, b: ResolvedPackageDeps) -> bool:
 def find_best_clique(
     packages: list[ResolvedPackageDeps],
 ) -> list[ResolvedPackageDeps]:
+    packages = sorted(packages, key=lambda p: p.package.key)
     if len(packages) == 1:
         return packages
 
@@ -43,7 +44,9 @@ def find_best_clique(
 
     cliques = list(nx.find_cliques(G))
     max_len = max(len(c) for c in cliques)
-    cliques = [c for c in cliques if len(c) == max_len]
+    # NetworkX traverses sets internally. Stabilize both member order and the
+    # final fallback when equally large cliques have equal version scores.
+    cliques = sorted(sorted(c) for c in cliques if len(c) == max_len)
 
     if len(cliques) == 1:
         return [by_key[k] for k in cliques[0]]
@@ -66,8 +69,9 @@ def find_best_clique(
         return result
 
     fallback_versions = {}
-    for k in cliques[0]:
-        fallback_versions |= by_key[k].resolved_versions
+    for clique in reversed(cliques):
+        for k in clique:
+            fallback_versions |= by_key[k].resolved_versions
 
     versions = [clique_to_versions(c) for c in cliques]
 
@@ -75,8 +79,12 @@ def find_best_clique(
     for v in versions:
         all_packages |= set(v.keys())
 
+    # Compare the same dependency first in every process when version tradeoffs
+    # exist (one clique has newer X while another has newer Y).
+    package_names = sorted(all_packages)
+
     def versions_to_sort_key(v):
-        return [parse_version(v[p]) if p in v else parse_version(fallback_versions[p]) for p in all_packages]
+        return [parse_version(v.get(p, fallback_versions[p])) for p in package_names]
 
     sort_keys = [versions_to_sort_key(v) for v in versions]
     best_index = max(range(len(cliques)), key=lambda i: sort_keys[i])
@@ -117,15 +125,18 @@ def merge_specifiers(packages: list[ResolvedPackageDeps]) -> list[str]:
 
     result = []
     for package_name in sorted(all_reqs.keys()):
-        specifier_set = SpecifierSet()
-        for r in all_reqs[package_name]:
-            specifier_set &= r.specifier
+        # Sort so the bound-selection loop below consistently retains the same
+        # spelling when equivalent bounds such as <2 and <2.0 are present.
+        specifiers = sorted(
+            (s for r in all_reqs[package_name] for s in r.specifier),
+            key=str,
+        )
 
         upper_bound: Specifier | None = None
         lower_bound: Specifier | None = None
         other: list[Specifier] = []
 
-        for specifier in specifier_set:
+        for specifier in specifiers:
             if specifier.operator in ("<", "<="):
                 if upper_bound is None or upper_bound.contains(specifier.version):
                     upper_bound = specifier
