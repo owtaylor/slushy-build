@@ -1,5 +1,7 @@
 import json
+from zipfile import ZipFile
 
+from slushy_build.requirements import parse_resolved_requirements
 from slushy_build.update import run_update
 
 
@@ -17,6 +19,67 @@ def _minimal_pipelinerun(prefetch_value: str) -> str:
 
 
 class TestRunUpdate:
+    def test_from_scratch_then_incremental_is_stable(self, mocker, monkeypatch, tmp_path):
+        # Use real uv resolution against local wheels: no network or index drift.
+        wheels = tmp_path / "wheels"
+        wheels.mkdir()
+        for name, version, deps in [
+            ("builder", "1", ["helper"]),
+            ("builder", "2", []),
+            ("helper", "1", []),
+            ("backend", "1", []),
+        ]:
+            with ZipFile(wheels / f"{name}-{version}-py3-none-any.whl", "w") as wheel:
+                info = f"{name}-{version}.dist-info"
+                wheel.writestr(
+                    f"{info}/METADATA",
+                    f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"
+                    + "".join(f"Requires-Dist: {dep}\n" for dep in deps),
+                )
+                wheel.writestr(
+                    f"{info}/WHEEL",
+                    "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+                )
+                wheel.writestr(f"{info}/RECORD", "")
+
+        monkeypatch.setenv("UV_NO_INDEX", "true")
+        monkeypatch.setenv("UV_FIND_LINKS", str(wheels))
+        monkeypatch.setenv("UV_OFFLINE", "true")
+        monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "cache"))
+        mocker.patch(
+            "slushy_build.update.build_deps_mod.get_build_dependencies",
+            side_effect=lambda pkg: {
+                "app-1": ["builder"],
+                "builder-2": ["backend"],
+            }.get(pkg.key, []),
+        )
+        req_file = tmp_path / "requirements.txt"
+        req_file.write_text("app==1\n")
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        (output_dir / "requirements-build.in").write_text("# slushy-build-source: app==1\nbuilder\n")
+        txt_file = output_dir / "requirements-build.txt"
+        txt_file.write_text("builder==1\nhelper==1\n")
+
+        def update(from_scratch):
+            run_update(
+                uv_lock=False,
+                requirements_file=req_file,
+                from_scratch=from_scratch,
+                exclude_newer=None,
+                output_dir=output_dir,
+                update_pipeline=False,
+            )
+            return {p.name: p.read_bytes() for p in output_dir.iterdir()}
+
+        # Incremental updates preserve the compatible old builder pin.
+        update(False)
+        assert parse_resolved_requirements(txt_file.read_text()) == {"builder": "1", "helper": "1"}
+        fresh_output = update(True)
+        assert parse_resolved_requirements(txt_file.read_text()) == {"builder": "2", "backend": "1"}
+        assert b"# slushy-build-source: builder==2\n" in fresh_output["requirements-build.in"]
+        assert update(False) == fresh_output
+
     def test_from_requirements_file(self, mocker, tmp_path):
         req_file = tmp_path / "reqs.txt"
         req_file.write_text("requests==2.31.0\nurllib3==2.0.4\n")

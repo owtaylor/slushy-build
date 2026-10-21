@@ -62,11 +62,7 @@ def run_update(
                 try:
                     deps = build_deps_mod.get_build_dependencies(package)
                 except build_deps_mod.BuildDependencyError as e:
-                    logger.warning(
-                        "Skipping %s: could not determine build dependencies: %s",
-                        package.key,
-                        e
-                    )
+                    logger.warning("Skipping %s: could not determine build dependencies: %s", package.key, e)
                     continue
 
                 if not deps:
@@ -128,6 +124,9 @@ def run_update(
             txt_file,
             generate_hashes=True,
             exclude_newer=exclude_newer,
+            # Otherwise uv reuses compatible pins from the existing .txt even
+            # though discovery above resolved without those pins.
+            upgrade=from_scratch,
         )
         logger.info("Compiled %s", txt_file)
 

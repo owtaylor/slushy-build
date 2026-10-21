@@ -24,8 +24,11 @@ def uv_pip_compile(
     *,
     generate_hashes: bool = False,
     exclude_newer: str | None = None,
+    upgrade: bool = False,
 ) -> None:
     cmd = ["uv", "pip", "compile", "--allow-unsafe"]
+    if upgrade:
+        cmd.append("--upgrade")
     if generate_hashes:
         cmd.append("--generate-hashes")
     if exclude_newer:
